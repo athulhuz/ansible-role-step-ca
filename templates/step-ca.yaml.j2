@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: step-ca
+  labels:
+    name: step-ca
+spec:
+  securityContext:
+    runAsUser: {{ ca_step_runas_user | default('1000') }}
+    runAsGroup: {{ ca_step_runas_group | default('1000') }}
+    fsGroup: {{ ca_step_runas_user | default('1000') }}
+  containers:
+  - name: server
+    image: docker.io/smallstep/step-ca:{{ ca_step_version | default('latest') }}
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+    env:
+      - name: DOCKER_STEPCA_INIT_NAME
+        value: {{ ca_step_init_name }}
+      - name: DOCKER_STEPCA_INIT_DNS_NAMES
+        value: {{ ca_step_init_dns_names }}
+      - name: DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT
+        value: {{ ca_step_init_remote_management }}
+      - name: DOCKER_STEPCA_INIT_ACME
+        value: {{ ca_step_init_acme }}
+      - name: DOCKER_STEPCA_INIT_SSH
+        value: {{ ca_step_init_ssh }}
+    ports:
+      - containerPort: {{ ca_step_port }}
+        hostPort: {{ ca_step_host_port }}
+      - containerPort: {{ ca_step_insecure_port }}
+        hostPort: {{ ca_step_insecure_host_port}}
+    volumeMounts:
+      - name: step-vol
+        mountPath: /home/step:U,Z
+  volumes:
+    - name: step-vol
+      hostPath:      
+        path: {{ ca_step_mounted_volume_path }}
+        type: Directory
+
+
+        
+    
+

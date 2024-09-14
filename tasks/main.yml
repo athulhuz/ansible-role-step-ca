@@ -1,0 +1,146 @@
+---
+# tasks file for ansible-role-step-ca
+
+- name: Create necessary directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    recurse: true
+  with_items:
+    - "{{ ca_step_mounted_volume_path | default('/var/lib/containers/.config/stepca') }}"
+    - "{{ ca_crl_serve_path | default('/var/lib/containers/.config/root_crl') }}"
+
+- name: Push Step-CA kube unit file
+  ansible.builtin.template:
+    src: step-ca.kube.j2
+    dest: /etc/containers/systemd/step-ca.kube
+  notify: Restart CA
+
+- name: Push Step-CA Kubernetes manifest
+  ansible.builtin.template:
+    src: step-ca.yaml.j2
+    dest: /etc/containers/systemd/step-ca.yaml
+  notify: Restart CA
+
+- name: Initialize stepca
+  ansible.builtin.systemd_service:
+    name: step-ca
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait until step-ca starts accepting requests
+  ansible.builtin.wait_for:
+    port: "{{ ca_step_port }}"
+    delay: 10
+    state: drained
+
+- name: Push adequate ca.json config
+  ansible.builtin.template:
+    src: ca.json.j2
+    dest: /var/lib/containers/.config/stepca/config/ca.json
+    owner: "{{ ca_step_runas_user }}"
+    group: "{{ ca_step_runas_group }}"
+    mode: '0600'
+  notify: Restart CA
+
+- name: Check whether certificates already exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  with_items:
+    - "{{ root_ca_path_to_cert }}"
+    - "{{ ca_path_to_cert }}"
+  register: certificate_exists
+
+- name: Issue Root CA
+  ansible.builtin.include_tasks: tasks/issue_root_ca.yml
+  when:
+    - not certificate_exists.results[0].stat.exists
+    - root_ca_bootstrap is defined and root_ca_bootstrap
+
+- name: Check root CA validity
+  community.crypto.x509_certificate_info:
+    path: "{{ root_ca_path_to_cert }}"
+    valid_at:
+      point_1: "{{ root_ca_validity_threshold }}"
+  register: result_root
+
+## TODO: Add notification when CA runs out of validity
+
+- name: Renew Root CA
+  ansible.builtin.include_tasks: tasks/issue_root_ca.yml
+  when:
+    - not result_root.valid_at.point_1
+    - root_ca_renew is defined and root_ca_renew
+
+- name: Issue CRL
+  ansible.builtin.include_tasks: tasks/issue_crl.yml
+
+- name: Push CRL endpoint kube file
+  ansible.builtin.template:
+    src: crl.kube.j2
+    dest: /etc/containers/systemd/crl.kube
+  notify: Restart CRL endpoint
+
+- name: Push CRL endpoint Kubernetes definition
+  ansible.builtin.template:
+    src: crl.yaml.j2
+    dest: /etc/containers/systemd/crl.yaml
+  notify: Restart CRL endpoint
+
+- name: Start CRL endpoint
+  ansible.builtin.systemd_service:
+    name: crl
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Create private key for new certificate
+  community.crypto.openssl_privatekey:
+    path: "{{ ca_path_to_privatekey }}"
+
+- name: Issue Intermediate CA
+  ansible.builtin.include_tasks: tasks/issue_ca.yml
+  when: not certificate_exists.results[1].stat.exists
+
+- name: Check for existing intermediate CA
+  community.crypto.x509_certificate_info:
+    path: "{{ ca_path_to_cert }}"
+    valid_at:
+      point_1: "{{ ca_validity_threshold }}"
+  register: result_ca
+
+## TODO: Add notification when CA runs out of validity
+
+- name: Renew Intermediate CA
+  ansible.builtin.include_tasks: tasks/issue_ca.yml
+  when: not result_ca.valid_at.point_1
+
+- name: Copy certs to step directories
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ ca_step_mounted_volume_path }}/certs"
+    remote_src: true
+    owner: "{{ ca_step_runas_user }}"
+    group: "{{ ca_step_runas_group }}"
+    mode: '0644'
+  with_items:
+    - "{{ root_ca_path_to_cert }}"
+    - "{{ ca_path_to_cert }}"
+  notify: Restart CA
+
+- name: Copy intermediate cert key to step directory
+  ansible.builtin.copy:
+    src: "{{ ca_path_to_privatekey }}"
+    dest: "{{ ca_step_mounted_volume_path }}/secrets/intermediate_ca_key"
+    remote_src: true
+    owner: "{{ ca_step_runas_user }}"
+    group: "{{ ca_step_runas_group }}"
+    mode: '0600'
+  notify: Restart CA
+
+- name: Remove root key from step-ca as it's not necessary
+  ansible.builtin.file:
+    path: "{{ ca_step_mounted_volume_path }}/secrets/root_ca_key"
+    state: absent
+  notify: Restart CA

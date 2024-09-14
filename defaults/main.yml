@@ -1,0 +1,53 @@
+---
+# defaults file for ansible-role-step-ca
+
+#These are manual flags for CA bootstrap and renewal. This is due to private key 
+#being stored offline.
+root_ca_bootstrap: true 
+root_ca_renew: false
+
+root_ca_revoked_certificates: ''
+root_ca_validity_period: '+3650d' # How long before root CA expires
+
+root_ca_validity_threshold: '+120d'
+ca_validity_threshold: '+30d'
+
+ca_step_version: latest
+
+ca_step_init_name: ca # Your CA Name
+ca_step_init_dns_names: localhost,example.com # Sub these values for actual FQDN of your CA server
+ca_step_init_remote_management: 'true' # Whether you wish to manage this CA remotely with Terraform or CLI
+ca_step_init_acme: 'true' # Whether ACME provisioner should be enabled
+ca_step_init_ssh: 'true' # Whether you want SSH certs
+
+ca_url: ca.example.com # The DNS name that will be present in all certificates
+ca_common_name: Example CA # Your CA Name
+ca_organization_name: Example Org # Your Org name
+
+ca_step_runas_user: 1100 #UID of step-ca container and associated files
+ca_step_runas_group: 1100 #GID of step-ca container and associated files
+
+ca_crl_runas_user: 1101 #UID of root ca crl distribution container
+ca_crl_runas_group: 1101 #GID of root ca crl distribution container
+
+ca_step_mounted_volume_path: /var/lib/containers/.config/stepca # Directory on server where step-ca home dir will be stored
+
+root_ca_path_to_privatekey: "/etc/pki/root_ca_key" # Where you wish to store your private key. May be outside of step dir.
+root_ca_path_to_cert: "/etc/pki/root_ca.crt" # Place to store your certificate. 
+root_ca_secret_ca_passphrase: '' # STORE IT IN A SECRET!
+
+root_ca_crl_distribution_points: 
+  - full_name: 'URI:{{ ca_url }}:8080/root_ca.crl' # Follow community.crypto.x509_certificate documentation on CRL distribution points
+root_ca_email_address: example@example.com # Email address of issuer
+
+ca_path_to_cert: "/etc/pki/intermediate_ca.crt"
+ca_path_to_privatekey: "/etc/pki/intermediate_ca_key"
+ca_subject_alt_name: 
+  - "DNS:{{ ca_url }}"
+ca_crl_distribution_points: 
+   - full_name: "URI:{{ ca_url }}/1.0/crl"
+ca_email_address: example@example.com
+
+ca_step_crl_endpoint_enabled: 'true' # Whether to enable internal step-ca crl server for long term user certificates
+ca_step_port: 9000 # Container port of step-ca
+ca_step_insecure_port: 8000 # Container port of step-ca for insecure comms (crl)

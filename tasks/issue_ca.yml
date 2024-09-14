@@ -1,0 +1,39 @@
+- name: Check that root private key is in place
+  ansible.builtin.stat:
+    path: "{{ root_ca_path_to_privatekey }}"
+  register: root_privatekey
+
+- name: Create certificate signing request (CSR) for intermediate CA certificate
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ ca_path_to_privatekey }}"
+    subject_alt_name: "{{ ca_subject_alt_name }}"
+    common_name: "{{ ca_common_name }} Intermediate CA"
+    use_common_name_for_san: false  # since we do not specify SANs, don't use CN as a SAN
+    basic_constraints:
+      - 'CA:TRUE'
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+  register: csr
+  when: root_privatekey.stat.exists
+
+- name: Sign certificate with our CA
+  community.crypto.x509_certificate_pipe:
+    csr_content: "{{ csr.csr }}"
+    provider: ownca
+    ownca_path: "{{ root_ca_path_to_cert }}"
+    ownca_privatekey_path: "{{ root_ca_path_to_privatekey }}"
+    ownca_privatekey_passphrase: "{{ root_ca_secret_ca_passphrase }}"
+    ownca_not_after: +365d  # valid for one year
+    ownca_not_before: "-1d"  # valid since yesterday
+  register: certificate
+  when: root_privatekey.stat.exists
+
+- name: Write certificate file 
+  copy:
+    dest: "{{ ca_path_to_cert }}"
+    content: "{{ certificate.certificate }}"
+  notify: Restart CA
+  when: root_privatekey.stat.exists

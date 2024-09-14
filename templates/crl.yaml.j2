@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crl
+  labels:
+    name: crl
+spec:
+  securityContext:
+    runAsUser: {{ ca_crl_runas_user | default('1000') }}
+    runAsGroup: {{ ca_crl_runas_group | default('1000') }}
+    fsGroup: {{ ca_crl_runas_user | default('1000') }}
+  containers:
+  - name: server
+    image: docker.io/nginxinc/nginx-unprivileged:{{ ca_crl_nginx_version | default('latest') }}
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+    ports:
+      - containerPort: 8080
+        hostPort: {{ ca_crl_host_port | default('8080')}}
+    volumeMounts:
+    - name: crl-dir
+      mountPath: /usr/share/nginx/html:U,Z
+  volumes:
+  - name: crl-dir
+    hostPath:
+      path: {{ ca_crl_serve_path | default('/var/lib/containers/.config/root_crl') }}
+      type: Directory

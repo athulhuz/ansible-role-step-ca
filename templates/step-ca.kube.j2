@@ -1,0 +1,13 @@
+[Unit]
+Description=StepCA ACME CA Server
+After=network.target
+
+[Kube]
+Yaml=step-ca.yaml 
+KubeDownForce=true
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

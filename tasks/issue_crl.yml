@@ -1,0 +1,22 @@
+- name: Check that root private key is in place
+  ansible.builtin.stat:
+    path: "{{ root_ca_path_to_privatekey }}"
+  register: root_privatekey
+
+- name: Issue Root CA CRL
+  community.crypto.x509_crl:
+    path: "{{ ca_crl_serve_path | default('/var/lib/containers/.config/root_crl') }}/root_ca.crl"
+    privatekey_path: "{{ root_ca_path_to_privatekey }}"
+    privatekey_passphrase: "{{ root_ca_secret_ca_passphrase }}"
+    issuer_ordered:
+      - CN: "{{ ca_common_name }} Root CA"
+    revoked_certificates: "{{ root_ca_revoked_certificates }}"
+    format: der
+    last_update: "+0s"
+    next_update: "+180d"
+    group: "{{ ca_crl_runas_group }}"
+    owner: "{{ ca_crl_runas_user }}"
+  when: 
+    - root_ca_revoked_certificates != '' 
+    - root_privatekey.stat.exists
+  notify: Restart CRL endpoint
